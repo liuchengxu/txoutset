@@ -1,5 +1,5 @@
 use bitcoin::consensus::encode::Error;
-use bitcoin::consensus::Decodable;
+use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::hashes::Hash;
 use bitcoin::script::{Builder, ScriptBuf};
 use bitcoin::{opcodes, PubkeyHash, PublicKey, ScriptHash};
@@ -10,7 +10,7 @@ const MAX_SCRIPT_SIZE: usize = 10_000;
 use crate::VarInt;
 
 /// Wrapper to enable script decompression
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Script(ScriptBuf);
 
 impl Script {
@@ -27,6 +27,59 @@ impl Script {
 impl From<ScriptBuf> for Script {
     fn from(script_buf: ScriptBuf) -> Self {
         Self(script_buf)
+    }
+}
+
+impl Encodable for Script {
+    fn consensus_encode<W: bitcoin::io::Write + ?Sized>(
+        &self,
+        writer: &mut W,
+    ) -> Result<usize, bitcoin::io::Error> {
+        let script = self.0.as_script();
+        let script_bytes = self.0.as_bytes();
+        let size = script_bytes.len();
+
+        if script.is_p2pkh() {
+            // P2PKH
+            VarInt::new(0x00).consensus_encode(writer)?;
+            writer.write_all(&script_bytes[3..23])?; // 20 bytes pubkey hash
+            Ok(21)
+        } else if script.is_p2sh() {
+            // P2SH
+            VarInt::new(0x01).consensus_encode(writer)?;
+            writer.write_all(&script_bytes[2..22])?; // 20 bytes script hash
+            Ok(21)
+        } else if let Some(pubkey) = script.p2pk_public_key() {
+            if pubkey.compressed {
+                // P2PK (compressed)
+                VarInt::new(script_bytes[1] as u64).consensus_encode(writer)?;
+                writer.write_all(&script_bytes[2..34])?; // 32 bytes pubkey
+                Ok(33)
+            } else {
+                // P2PK (uncompressed)
+                let compressed_pubkey = PublicKey::from_slice(&script_bytes[1..66])
+                    .map_err(|err| {
+                        bitcoin::io::Error::new(
+                            bitcoin::io::ErrorKind::Other,
+                            format!("Failed to deserialize public key: {err:?}"),
+                        )
+                    })?
+                    .inner
+                    .serialize();
+                VarInt::new(compressed_pubkey[0] as u64 + 2).consensus_encode(writer)?;
+                writer.write_all(&compressed_pubkey[1..33])?; // 32 bytes pubkey
+                Ok(33)
+            }
+        } else if size > MAX_SCRIPT_SIZE {
+            // OP_RETURN script
+            writer.write_all(script_bytes)?;
+            Ok(size)
+        } else {
+            // Custom script
+            VarInt::new((size + NUM_SPECIAL_SCRIPTS) as u64).consensus_encode(writer)?;
+            writer.write_all(script_bytes)?;
+            Ok(size + 1)
+        }
     }
 }
 
