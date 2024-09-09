@@ -14,6 +14,10 @@ use crate::VarInt;
 pub struct Script(ScriptBuf);
 
 impl Script {
+    pub fn from_bytes(script_buf: Vec<u8>) -> Self {
+        Self(ScriptBuf::from_bytes(script_buf))
+    }
+
     /// Reveal the inner script buffer
     pub fn into_inner(self) -> ScriptBuf {
         self.0
