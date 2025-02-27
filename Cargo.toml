@@ -10,7 +10,8 @@ license = "MIT"
 edition = "2021"
 
 [dependencies]
-bitcoin = { git = "https://github.com/liuchengxu/rust-bitcoin", branch = "0.32.x-subcoin" }
+bitcoin = { git = "https://github.com/liuchengxu/rust-bitcoin", rev = "1a24197c4ad4065963a006ef553cb1eec993720e" }
+
 log = "0.4.21"
 
 [workspace]
